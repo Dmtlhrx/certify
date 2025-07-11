@@ -15,13 +15,17 @@ import {
   Globe,
   Mail,
   MapPin,
-  AlertTriangle
+  AlertTriangle,
+  Zap
 } from 'lucide-react'
 import { useAuthStore } from '../store/useAuthStore'
 import { useCompany } from '../hooks/useCompany'
 import { useBlockchain } from '../hooks/useBlockchain'
 import { useIPFS } from '../hooks/useIPFS'
 import { useAccount, useNetwork } from 'wagmi'
+import TokenTypeModal from '../components/TokenTypeModal'
+import BlockchainSelector from '../components/BlockchainSelector'
+import { blockchainService } from '../services/blockchain'
 import toast from 'react-hot-toast'
 
 interface CompanyForm {
@@ -31,8 +35,6 @@ interface CompanyForm {
   email: string
   industry: string
   country: string
-  blockchain: string
-  symbol: string
 }
 
 const CompanySettings: React.FC = () => {
@@ -41,12 +43,16 @@ const CompanySettings: React.FC = () => {
   const { address } = useAccount()
   const { chain } = useNetwork()
   const { company, loading, saveCompany, setContractAddress } = useCompany()
-  const { deployContract, isDeploying, deploymentStatus } = useBlockchain()
   const { uploadFile, uploading } = useIPFS()
   
   const [logo, setLogo] = useState<string>('')
   const [activeTab, setActiveTab] = useState('profile')
-  const [showDeploymentDetails, setShowDeploymentDetails] = useState(false)
+  const [showTokenTypeModal, setShowTokenTypeModal] = useState(false)
+  const [selectedTokenType, setSelectedTokenType] = useState<'nft' | 'sbt'>('nft')
+  const [selectedBlockchain, setSelectedBlockchain] = useState('sepolia')
+  const [isDeploying, setIsDeploying] = useState(false)
+  const [deploymentStep, setDeploymentStep] = useState('')
+  const [deploymentProgress, setDeploymentProgress] = useState(0)
 
   const {
     register,
@@ -54,16 +60,9 @@ const CompanySettings: React.FC = () => {
     formState: { errors },
     setValue,
     watch
-  } = useForm<CompanyForm>({
-    defaultValues: {
-      blockchain: 'sepolia',
-      symbol: 'CERT'
-    }
-  })
+  } = useForm<CompanyForm>()
 
-  const watchedBlockchain = watch('blockchain')
   const watchedName = watch('name')
-  const watchedSymbol = watch('symbol')
 
   useEffect(() => {
     if (company) {
@@ -73,7 +72,6 @@ const CompanySettings: React.FC = () => {
       setValue('email', company.email || '')
       setValue('industry', company.industry || '')
       setValue('country', company.country || '')
-      setValue('blockchain', company.blockchain || 'sepolia')
       setLogo(company.logo || '')
     }
   }, [company, setValue])
@@ -91,15 +89,6 @@ const CompanySettings: React.FC = () => {
     'Other'
   ]
 
-  const blockchains = [
-    { id: 'ethereum', name: 'Ethereum Mainnet', symbol: 'ETH', testnet: false },
-    { id: 'sepolia', name: 'Sepolia Testnet', symbol: 'ETH', testnet: true },
-    { id: 'bsc', name: 'BNB Smart Chain', symbol: 'BNB', testnet: false },
-    { id: 'bscTestnet', name: 'BNB Testnet', symbol: 'BNB', testnet: true },
-    { id: 'polygon', name: 'Polygon Mainnet', symbol: 'MATIC', testnet: false },
-    { id: 'polygonMumbai', name: 'Polygon Mumbai', symbol: 'MATIC', testnet: true }
-  ]
-
   const onSubmit = async (data: CompanyForm) => {
     try {
       await saveCompany({
@@ -109,7 +98,6 @@ const CompanySettings: React.FC = () => {
         email: data.email,
         industry: data.industry,
         country: data.country,
-        blockchain: data.blockchain,
         logo
       })
     } catch (error) {
@@ -123,76 +111,91 @@ const CompanySettings: React.FC = () => {
       try {
         const result = await uploadFile(file)
         setLogo(result.url)
-        toast.success('Logo téléchargé avec succès!')
+        toast.success(t('common.success'))
       } catch (error) {
-        toast.error('Erreur lors du téléchargement du logo')
+        toast.error(t('common.error'))
       }
     }
   }
 
   const handleDeployContract = async () => {
-    const formData = watch()
-    
-    if (!company?.name) {
-      toast.error('Veuillez d\'abord sauvegarder votre profil entreprise')
+    if (!watchedName) {
+      toast.error(t('errors.companyNameRequired'))
       setActiveTab('profile')
       return
     }
 
-    if (!formData.symbol) {
-      toast.error('Veuillez remplir le symbole du token')
-      return
-    }
-
     if (!address) {
-      toast.error('Veuillez connecter votre wallet')
+      toast.error(t('errors.walletNotConnected'))
       return
     }
 
     try {
-      setShowDeploymentDetails(true)
-      
-      const result = await deployContract(
-        company.name,
-        company.description || '',
-        formData.symbol,
-        formData.blockchain
-      )
+      setIsDeploying(true)
+      setDeploymentStep(t('deployment.status.preparing'))
+      setDeploymentProgress(10)
 
-      if (result) {
-        await setContractAddress(result.contractAddress, result.transactionHash)
-        toast.success('Smart contract déployé et configuré avec succès!')
-        setActiveTab('profile') // Retour à l'onglet profil
+      // Check balance
+      const balance = await blockchainService.getBalance(address)
+      const estimatedCost = blockchainService.getEstimatedCost(selectedBlockchain)
+      
+      if (parseFloat(balance) < parseFloat(estimatedCost)) {
+        throw new Error(t('errors.insufficientFunds'))
       }
-    } catch (error) {
+
+      setDeploymentStep(t('deployment.status.switching'))
+      setDeploymentProgress(25)
+
+      // Switch network if needed
+      await blockchainService.switchNetwork(selectedBlockchain)
+
+      setDeploymentStep(t('deployment.status.deploying'))
+      setDeploymentProgress(50)
+
+      // Deploy contract
+      const result = await blockchainService.deployContract({
+        name: watchedName,
+        symbol: 'CERT',
+        tokenType: selectedTokenType,
+        blockchain: selectedBlockchain,
+        ownerAddress: address
+      })
+
+      setDeploymentStep(t('deployment.status.confirming'))
+      setDeploymentProgress(75)
+
+      // Save contract address to database
+      await setContractAddress(result.contractAddress, result.transactionHash)
+
+      setDeploymentStep(t('deployment.status.success'))
+      setDeploymentProgress(100)
+
+      toast.success(t('deployment.deploymentSuccess'))
+      setActiveTab('profile')
+    } catch (error: any) {
       console.error('Deploy error:', error)
+      toast.error(error.message || t('deployment.deploymentError'))
     } finally {
-      setShowDeploymentDetails(false)
+      setIsDeploying(false)
+      setTimeout(() => {
+        setDeploymentStep('')
+        setDeploymentProgress(0)
+      }, 3000)
     }
   }
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text)
-    toast.success('Copié dans le presse-papiers!')
+    toast.success(t('common.copied'))
   }
 
   const getBlockExplorerUrl = (hash: string) => {
-    const explorers: Record<string, string> = {
-      ethereum: 'https://etherscan.io',
-      sepolia: 'https://sepolia.etherscan.io',
-      bsc: 'https://bscscan.com',
-      bscTestnet: 'https://testnet.bscscan.com',
-      polygon: 'https://polygonscan.com',
-      polygonMumbai: 'https://mumbai.polygonscan.com'
-    }
-    
-    const explorer = explorers[company?.blockchain || 'sepolia']
-    return `${explorer}/address/${hash}`
+    return blockchainService.getBlockExplorerUrl(company?.blockchain || 'sepolia', hash, 'address')
   }
 
   const tabs = [
-    { id: 'profile', label: 'Profil Entreprise', icon: <Building className="h-5 w-5" /> },
-    { id: 'blockchain', label: 'Blockchain', icon: <Shield className="h-5 w-5" /> }
+    { id: 'profile', label: t('settings.profile'), icon: <Building className="h-5 w-5" /> },
+    { id: 'blockchain', label: t('settings.blockchain'), icon: <Shield className="h-5 w-5" /> }
   ]
 
   if (loading) {
@@ -213,10 +216,10 @@ const CompanySettings: React.FC = () => {
           className="mb-8"
         >
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
-            Paramètres Entreprise
+            {t('settings.title')}
           </h1>
           <p className="text-gray-600">
-            Configurez votre profil d'organisation et votre blockchain
+            {t('settings.subtitle')}
           </p>
         </motion.div>
 
@@ -251,7 +254,7 @@ const CompanySettings: React.FC = () => {
               {/* Logo Upload */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-3">
-                  Logo de l'entreprise
+                  {t('settings.logo')}
                 </label>
                 <div className="flex items-center space-x-6">
                   <div className="w-24 h-24 bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden">
@@ -279,7 +282,7 @@ const CompanySettings: React.FC = () => {
                       ) : (
                         <Upload className="h-4 w-4" />
                       )}
-                      <span>{uploading ? 'Téléchargement...' : 'Télécharger Logo'}</span>
+                      <span>{uploading ? t('common.loading') : t('settings.uploadLogo')}</span>
                     </label>
                     {logo && (
                       <button
@@ -297,12 +300,12 @@ const CompanySettings: React.FC = () => {
               <div className="grid md:grid-cols-2 gap-6">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Nom de l'entreprise *
+                    {t('settings.companyName')} *
                   </label>
                   <input
-                    {...register('name', { required: 'Le nom de l\'entreprise est requis' })}
+                    {...register('name', { required: t('errors.companyNameRequired') })}
                     className="input"
-                    placeholder="Entrez le nom de votre entreprise"
+                    placeholder={t('settings.companyName')}
                   />
                   {errors.name && (
                     <p className="text-red-500 text-sm mt-1">{errors.name.message}</p>
@@ -311,10 +314,10 @@ const CompanySettings: React.FC = () => {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Secteur d'activité
+                    {t('settings.industry')}
                   </label>
                   <select {...register('industry')} className="input">
-                    <option value="">Sélectionnez un secteur</option>
+                    <option value="">{t('settings.industry')}</option>
                     {industries.map(industry => (
                       <option key={industry} value={industry}>{industry}</option>
                     ))}
@@ -323,7 +326,7 @@ const CompanySettings: React.FC = () => {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Site web
+                    {t('settings.website')}
                   </label>
                   <div className="relative">
                     <Globe className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -331,14 +334,14 @@ const CompanySettings: React.FC = () => {
                       {...register('website')}
                       type="url"
                       className="input pl-10"
-                      placeholder="https://votre-entreprise.com"
+                      placeholder="https://your-company.com"
                     />
                   </div>
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Email de contact
+                    {t('settings.email')}
                   </label>
                   <div className="relative">
                     <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -346,21 +349,21 @@ const CompanySettings: React.FC = () => {
                       {...register('email')}
                       type="email"
                       className="input pl-10"
-                      placeholder="contact@votre-entreprise.com"
+                      placeholder="contact@your-company.com"
                     />
                   </div>
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Pays
+                    {t('settings.country')}
                   </label>
                   <div className="relative">
                     <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
                     <input
                       {...register('country')}
                       className="input pl-10"
-                      placeholder="Entrez votre pays"
+                      placeholder={t('settings.country')}
                     />
                   </div>
                 </div>
@@ -368,20 +371,20 @@ const CompanySettings: React.FC = () => {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Description
+                  {t('settings.description')}
                 </label>
                 <textarea
                   {...register('description')}
                   rows={4}
                   className="input"
-                  placeholder="Décrivez votre organisation et ce que vous faites..."
+                  placeholder={t('settings.description')}
                 />
               </div>
 
               <div className="flex justify-end">
                 <button type="submit" className="btn-primary flex items-center space-x-2">
                   <Save className="h-4 w-4" />
-                  <span>Sauvegarder</span>
+                  <span>{t('settings.save')}</span>
                 </button>
               </div>
             </form>
@@ -399,18 +402,18 @@ const CompanySettings: React.FC = () => {
             <div className="panel p-6">
               <div className="flex items-center justify-between mb-6">
                 <div>
-                  <h3 className="text-lg font-medium text-gray-900">Smart Contract</h3>
-                  <p className="text-gray-600">Votre contrat de certification dédié</p>
+                  <h3 className="text-lg font-medium text-gray-900">{t('settings.smartContract')}</h3>
+                  <p className="text-gray-600">{t('settings.contractStatus')}</p>
                 </div>
                 <div className="flex items-center space-x-2">
                   {company?.contractAddress ? (
                     <div className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-medium flex items-center space-x-1">
                       <CheckCircle className="h-4 w-4" />
-                      <span>Déployé</span>
+                      <span>{t('settings.deployed')}</span>
                     </div>
                   ) : (
                     <div className="bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full text-sm font-medium">
-                      Non Déployé
+                      {t('settings.notDeployed')}
                     </div>
                   )}
                 </div>
@@ -420,7 +423,7 @@ const CompanySettings: React.FC = () => {
                 <div className="space-y-4">
                   <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                     <div>
-                      <p className="text-sm font-medium text-gray-700">Adresse du Contrat</p>
+                      <p className="text-sm font-medium text-gray-700">{t('settings.contractAddress')}</p>
                       <p className="font-mono text-sm text-gray-900">{company.contractAddress}</p>
                     </div>
                     <div className="flex items-center space-x-2">
@@ -445,129 +448,80 @@ const CompanySettings: React.FC = () => {
                 <div className="text-center py-8">
                   <Shield className="h-16 w-16 text-gray-300 mx-auto mb-4" />
                   <p className="text-gray-600 mb-6">
-                    Déployez votre smart contract pour commencer à émettre des certificats
+                    {t('deployment.subtitle')}
                   </p>
                   
-                  {/* Deployment form */}
-                  <div className="max-w-md mx-auto space-y-4">
-                    {!company?.name && (
-                      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
-                        <div className="flex items-center space-x-2">
-                          <AlertTriangle className="h-5 w-5 text-yellow-600" />
-                          <div>
-                            <p className="text-sm font-medium text-yellow-800">
-                              Profil entreprise requis
-                            </p>
-                            <p className="text-sm text-yellow-700">
-                              Veuillez d'abord sauvegarder votre profil entreprise dans l'onglet "Profil Entreprise"
-                            </p>
-                          </div>
+                  {!watchedName && (
+                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+                      <div className="flex items-center space-x-2">
+                        <AlertTriangle className="h-5 w-5 text-yellow-600" />
+                        <div>
+                          <p className="text-sm font-medium text-yellow-800">
+                            {t('dashboard.setupRequired')}
+                          </p>
+                          <p className="text-sm text-yellow-700">
+                            {t('dashboard.setupDescription')}
+                          </p>
                         </div>
                       </div>
-                    )}
-                    
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Blockchain
-                      </label>
-                      <select
-                        {...register('blockchain')}
-                        className="input"
-                      >
-                        {blockchains.map(blockchain => (
-                          <option key={blockchain.id} value={blockchain.id}>
-                            {blockchain.name} {blockchain.testnet && '(Testnet)'}
-                          </option>
-                        ))}
-                      </select>
                     </div>
-                    
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Symbole du Token
-                      </label>
-                      <input
-                        {...register('symbol', { required: 'Le symbole est requis' })}
-                        className="input"
-                        placeholder="CERT"
-                        maxLength={10}
-                      />
-                      {errors.symbol && (
-                        <p className="text-red-500 text-sm mt-1">{errors.symbol.message}</p>
-                      )}
-                    </div>
-                    
-                    <button
-                      onClick={handleDeployContract}
-                      disabled={isDeploying || !company?.name || !watchedSymbol}
-                      className="btn-primary flex items-center space-x-2 mx-auto"
-                    >
-                      {isDeploying ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          <span>Déploiement...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Shield className="h-4 w-4" />
-                          <span>Déployer le Contrat</span>
-                        </>
-                      )}
-                    </button>
+                  )}
+                  
+                  <button
+                    onClick={() => setShowTokenTypeModal(true)}
+                    disabled={!watchedName}
+                    className="btn-primary flex items-center space-x-2 mx-auto"
+                  >
+                    <Shield className="h-4 w-4" />
+                    <span>{t('settings.deployContract')}</span>
+                  </button>
 
-                    {/* Deployment Status */}
-                    {(isDeploying || deploymentStatus) && (
-                      <div className="mt-4 p-4 bg-blue-50 rounded-lg">
+                  {/* Deployment Progress */}
+                  {isDeploying && (
+                    <div className="mt-6 p-4 bg-blue-50 rounded-lg">
+                      <div className="flex items-center space-x-3 mb-3">
+                        <Loader2 className="h-5 w-5 text-blue-600 animate-spin" />
                         <p className="text-sm text-blue-800 font-medium">
-                          {deploymentStatus || 'Préparation du déploiement...'}
+                          {deploymentStep}
                         </p>
-                        {isDeploying && (
-                          <div className="mt-2">
-                            <div className="w-full bg-blue-200 rounded-full h-2">
-                              <div className="bg-blue-600 h-2 rounded-full animate-pulse" style={{ width: '60%' }}></div>
-                            </div>
-                          </div>
-                        )}
                       </div>
-                    )}
-                  </div>
+                      <div className="w-full bg-blue-200 rounded-full h-2">
+                        <div 
+                          className="bg-blue-600 h-2 rounded-full transition-all duration-500"
+                          style={{ width: `${deploymentProgress}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
 
-            {/* Network Info */}
+            {/* Available Networks */}
             <div className="panel p-6">
               <h3 className="text-lg font-medium text-gray-900 mb-4">
-                Réseaux Blockchain Disponibles
+                {t('settings.availableNetworks')}
               </h3>
-              <div className="grid md:grid-cols-3 gap-4">
-                {blockchains.filter(b => b.testnet).map((blockchain) => (
-                  <div
-                    key={blockchain.id}
-                    className={`p-4 rounded-lg transition-all duration-200 cursor-pointer ${
-                      watchedBlockchain === blockchain.id
-                        ? 'bg-blue-50 ring-2 ring-blue-500'
-                        : 'bg-gray-50 hover:bg-gray-100'
-                    }`}
-                    onClick={() => setValue('blockchain', blockchain.id)}
-                  >
-                    <div className="flex items-center space-x-3">
-                      <div className={`w-3 h-3 rounded-full ${
-                        blockchain.id.includes('ethereum') || blockchain.id.includes('sepolia') ? 'bg-blue-500' :
-                        blockchain.id.includes('bsc') ? 'bg-yellow-500' :
-                        'bg-purple-500'
-                      }`}></div>
-                      <div>
-                        <p className="font-medium text-gray-900">{blockchain.name}</p>
-                        <p className="text-sm text-gray-600">{blockchain.symbol}</p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <BlockchainSelector
+                selectedBlockchain={selectedBlockchain}
+                onSelect={setSelectedBlockchain}
+                tokenType={selectedTokenType}
+              />
             </div>
           </motion.div>
         )}
+
+        {/* Token Type Modal */}
+        <TokenTypeModal
+          isOpen={showTokenTypeModal}
+          onClose={() => setShowTokenTypeModal(false)}
+          onSelect={(tokenType) => {
+            setSelectedTokenType(tokenType)
+            setShowTokenTypeModal(false)
+            handleDeployContract()
+          }}
+          selectedType={selectedTokenType}
+        />
       </div>
     </div>
   )

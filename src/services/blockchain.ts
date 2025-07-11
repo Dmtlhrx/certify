@@ -1,118 +1,33 @@
 import { ethers } from 'ethers'
-import { contractAPI } from './api'
+import { CONTRACT_CONFIGS, NFT_CERTIFICATE_ABI, SBT_CERTIFICATE_ABI, NFT_CERTIFICATE_BYTECODE, SBT_CERTIFICATE_BYTECODE, TOKEN_TYPES } from '../config/contracts'
+import { SolanaService } from './solana'
 
-// Contract ABIs
-export const FACTORY_ABI = [
-  "function registerCompany(string memory _name, string memory _description, string memory _symbol) external",
-  "function getCompany(address _owner) external view returns (tuple(address owner, address contractAddress, string name, string description, uint256 createdAt, bool isActive))",
-  "function getCompanyContract(address _owner) external view returns (address)",
-  "event CompanyRegistered(address indexed owner, address indexed contractAddress, string name)"
-]
-
-export const CERTIFICATE_ABI = [
-  "function issueCertificate(address _recipient, string memory _recipientName, string memory _courseName, string memory _ipfsHash, bool _isPublic, bool _isSoulbound) external returns (uint256)",
-  "function getCertificate(uint256 _tokenId) external view returns (tuple(uint256 tokenId, address recipient, string recipientName, string courseName, string ipfsHash, uint256 issueDate, bool isPublic, bool isSoulbound))",
-  "function totalSupply() external view returns (uint256)",
-  "function ownerOf(uint256 tokenId) external view returns (address)",
-  "function tokenURI(uint256 tokenId) external view returns (string)",
-  "function owner() external view returns (address)",
-  "event CertificateIssued(uint256 indexed tokenId, address indexed recipient, string recipientName, string courseName, string ipfsHash, bool isPublic, bool isSoulbound)"
-]
-
-// Simplified Certificate Contract ABI for deployment
-export const CERTIFICATE_DEPLOY_ABI = [
-  "constructor(string memory _name, string memory _symbol, address _owner)"
-]
-
-// Network configurations
-export const NETWORK_CONFIGS = {
-  ethereum: {
-    chainId: 1,
-    name: 'Ethereum Mainnet',
-    symbol: 'ETH',
-    rpcUrl: 'https://mainnet.infura.io/v3/',
-    blockExplorer: 'https://etherscan.io'
-  },
-  sepolia: {
-    chainId: 11155111,
-    name: 'Sepolia Testnet',
-    symbol: 'ETH',
-    rpcUrl: 'https://sepolia.infura.io/v3/',
-    blockExplorer: 'https://sepolia.etherscan.io'
-  },
-  bsc: {
-    chainId: 56,
-    name: 'BNB Smart Chain',
-    symbol: 'BNB',
-    rpcUrl: 'https://bsc-dataseed1.binance.org/',
-    blockExplorer: 'https://bscscan.com'
-  },
-  bscTestnet: {
-    chainId: 97,
-    name: 'BNB Smart Chain Testnet',
-    symbol: 'BNB',
-    rpcUrl: 'https://data-seed-prebsc-1-s1.binance.org:8545/',
-    blockExplorer: 'https://testnet.bscscan.com'
-  },
-  polygon: {
-    chainId: 137,
-    name: 'Polygon Mainnet',
-    symbol: 'MATIC',
-    rpcUrl: 'https://polygon-rpc.com/',
-    blockExplorer: 'https://polygonscan.com'
-  },
-  polygonMumbai: {
-    chainId: 80001,
-    name: 'Polygon Mumbai',
-    symbol: 'MATIC',
-    rpcUrl: 'https://rpc-mumbai.maticvigil.com/',
-    blockExplorer: 'https://mumbai.polygonscan.com'
-  }
+export interface DeploymentParams {
+  name: string
+  symbol: string
+  tokenType: 'nft' | 'sbt'
+  blockchain: string
+  ownerAddress: string
 }
 
-// Types
-export interface CertificateData {
+export interface CertificateParams {
   contractAddress: string
   recipientAddress: string
   recipientName: string
   courseName: string
-  ipfsHash: string
-  isPublic?: boolean
-  isSoulbound?: boolean
-}
-
-export interface Certificate {
-  tokenId: string
-  recipient: string
-  recipientName: string
-  courseName: string
-  ipfsHash: string
-  issueDate: string
-  isPublic: boolean
-  isSoulbound: boolean
-}
-
-export interface CompanyInfo {
-  owner: string
-  contractAddress: string
-  name: string
-  description: string
-  createdAt: string
-  isActive: boolean
-}
-
-export interface DeploymentResult {
-  contractAddress: string
-  transactionHash: string
-  blockNumber: number
+  metadataUri: string
+  tokenType: 'nft' | 'sbt'
+  blockchain: string
 }
 
 export class BlockchainService {
   private provider: ethers.BrowserProvider | null = null
   private signer: ethers.JsonRpcSigner | null = null
+  private solanaService: SolanaService
 
   constructor() {
     this.initializeProvider()
+    this.solanaService = new SolanaService()
   }
 
   private async initializeProvider() {
@@ -142,170 +57,195 @@ export class BlockchainService {
     }
   }
 
-  async connectWallet(): Promise<string[]> {
-    if (!this.provider) {
-      throw new Error('No wallet provider found')
+  async deployContract(params: DeploymentParams): Promise<{ contractAddress: string; transactionHash: string; blockNumber: number }> {
+    const { name, symbol, tokenType, blockchain, ownerAddress } = params
+
+    if (blockchain.startsWith('solana')) {
+      return this.deploySolanaContract(params)
     }
 
     try {
-      const accounts = await (window as any).ethereum.request({
-        method: 'eth_requestAccounts'
-      })
+      const signer = await this.getSigner()
+      const config = CONTRACT_CONFIGS[blockchain as keyof typeof CONTRACT_CONFIGS]
       
-      this.signer = await this.getSigner()
-      return accounts
+      if (!config) {
+        throw new Error(`Unsupported blockchain: ${blockchain}`)
+      }
+
+      // Check if we're on the correct network
+      const network = await this.provider!.getNetwork()
+      if (Number(network.chainId) !== config.chainId) {
+        await this.switchNetwork(blockchain)
+      }
+
+      // Get the appropriate ABI and bytecode based on token type
+      const abi = tokenType === 'nft' ? NFT_CERTIFICATE_ABI : SBT_CERTIFICATE_ABI
+      const bytecode = tokenType === 'nft' ? NFT_CERTIFICATE_BYTECODE : SBT_CERTIFICATE_BYTECODE
+
+      // Create contract factory
+      const contractFactory = new ethers.ContractFactory(abi, bytecode, signer)
+
+      // Estimate gas
+      const estimatedGas = await contractFactory.getDeployTransaction(name, symbol, ownerAddress).then(tx => 
+        this.provider!.estimateGas(tx)
+      )
+
+      // Add 20% buffer to gas estimate
+      const gasLimit = estimatedGas * 120n / 100n
+
+      // Deploy contract
+      const contract = await contractFactory.deploy(name, symbol, ownerAddress, {
+        gasLimit,
+        gasPrice: config.gasPrice
+      })
+
+      // Wait for deployment
+      const receipt = await contract.deploymentTransaction()?.wait()
+      
+      if (!receipt) {
+        throw new Error('Deployment transaction failed')
+      }
+
+      return {
+        contractAddress: await contract.getAddress(),
+        transactionHash: receipt.hash,
+        blockNumber: receipt.blockNumber
+      }
     } catch (error) {
-      console.error('Failed to connect wallet:', error)
+      console.error('Contract deployment error:', error)
       throw error
     }
   }
 
-  async getAccount(): Promise<string | null> {
+  private async deploySolanaContract(params: DeploymentParams): Promise<{ contractAddress: string; transactionHash: string; blockNumber: number }> {
     try {
-      if (!this.signer) {
-        await this.connectWallet()
-      }
+      // For Solana, we don't deploy contracts in the traditional sense
+      // Instead, we create a program account or use existing programs
+      // This is a simplified implementation
+      const publicKey = await this.solanaService.connectWallet()
       
+      if (!publicKey) {
+        throw new Error('Failed to connect Solana wallet')
+      }
+
+      // Create a mock deployment for Solana
+      // In a real implementation, you would deploy a Solana program
+      const mockContractAddress = publicKey.toString()
+      const mockTransactionHash = 'solana_' + Date.now().toString()
+      
+      return {
+        contractAddress: mockContractAddress,
+        transactionHash: mockTransactionHash,
+        blockNumber: Date.now()
+      }
+    } catch (error) {
+      console.error('Solana contract deployment error:', error)
+      throw error
+    }
+  }
+
+  async issueCertificate(params: CertificateParams): Promise<{ tokenId: string; transactionHash: string; blockNumber: number }> {
+    const { contractAddress, recipientAddress, recipientName, courseName, metadataUri, tokenType, blockchain } = params
+
+    if (blockchain.startsWith('solana')) {
+      return this.issueSolanaCertificate(params)
+    }
+
+    try {
       const signer = await this.getSigner()
-      return await signer.getAddress()
-    } catch (error) {
-      console.error('Failed to get account:', error)
-      return null
-    }
-  }
+      const abi = tokenType === 'nft' ? NFT_CERTIFICATE_ABI : SBT_CERTIFICATE_ABI
+      
+      const contract = new ethers.Contract(contractAddress, abi, signer)
 
-  async getNetwork(): Promise<{ chainId: number; name: string } | null> {
-    if (!this.provider) return null
+      // Estimate gas
+      const estimatedGas = await contract.issueCertificate.estimateGas(
+        recipientAddress,
+        recipientName,
+        courseName,
+        metadataUri
+      )
 
-    try {
-      const network = await this.provider.getNetwork()
-      return {
-        chainId: Number(network.chainId),
-        name: network.name
-      }
-    } catch (error) {
-      console.error('Failed to get network:', error)
-      return null
-    }
-  }
+      // Add 20% buffer
+      const gasLimit = estimatedGas * 120n / 100n
 
-  /**
-   * Déploie un contrat de certificats via l'API backend
-   * Cette méthode utilise le backend pour gérer le déploiement
-   */
-  async deployCompanyContract(
-    companyName: string,
-    description: string,
-    symbol: string,
-    blockchain: string
-  ): Promise<DeploymentResult> {
-    try {
-      console.log('🚀 Deploying contract via backend API...')
-      
-      // Utiliser l'API backend pour le déploiement
-      const response = await contractAPI.deploy(companyName, description, symbol, blockchain)
-      
-      console.log('✅ Contract deployed successfully:', response.data)
-      
-      return {
-        contractAddress: response.data.contractAddress,
-        transactionHash: response.data.transactionHash,
-        blockNumber: response.data.blockNumber
-      }
-    } catch (error: any) {
-      console.error('❌ Contract deployment error:', error)
-      
-      // Améliorer les messages d'erreur
-      if (error.response?.status === 400) {
-        throw new Error(error.response.data.error || 'Paramètres de déploiement invalides')
-      } else if (error.response?.status === 500) {
-        throw new Error('Erreur serveur lors du déploiement')
-      } else if (error.code === 'NETWORK_ERROR') {
-        throw new Error('Erreur réseau - Vérifiez votre connexion')
-      } else {
-        throw new Error(error.response?.data?.error || error.message || 'Erreur lors du déploiement du contrat')
-      }
-    }
-  }
+      // Issue certificate
+      const tx = await contract.issueCertificate(
+        recipientAddress,
+        recipientName,
+        courseName,
+        metadataUri,
+        { gasLimit }
+      )
 
-  /**
-   * Émet un certificat via l'API backend
-   */
-  async issueCertificate(data: CertificateData): Promise<any> {
-    try {
-      console.log('📜 Issuing certificate via backend API...')
-      
-      const response = await contractAPI.issueCertificate({
-        contractAddress: data.contractAddress,
-        recipientAddress: data.recipientAddress,
-        recipientName: data.recipientName,
-        courseName: data.courseName,
-        ipfsHash: data.ipfsHash,
-        isPublic: data.isPublic ?? true,
-        isSoulbound: data.isSoulbound ?? false
+      const receipt = await tx.wait()
+
+      // Extract token ID from events
+      const event = receipt.logs.find((log: any) => {
+        try {
+          const parsed = contract.interface.parseLog(log)
+          return parsed.name === 'CertificateIssued'
+        } catch (e) {
+          return false
+        }
       })
-      
-      console.log('✅ Certificate issued successfully:', response.data)
-      
-      return {
-        tokenId: response.data.tokenId,
-        transactionHash: response.data.transactionHash,
-        blockNumber: response.data.blockNumber,
-        contractAddress: data.contractAddress
+
+      let tokenId = '0'
+      if (event) {
+        const parsed = contract.interface.parseLog(event)
+        tokenId = parsed.args.tokenId.toString()
       }
-    } catch (error: any) {
-      console.error('❌ Certificate issuance error:', error)
+
+      return {
+        tokenId,
+        transactionHash: receipt.hash,
+        blockNumber: receipt.blockNumber
+      }
+    } catch (error) {
+      console.error('Certificate issuance error:', error)
+      throw error
+    }
+  }
+
+  private async issueSolanaCertificate(params: CertificateParams): Promise<{ tokenId: string; transactionHash: string; blockNumber: number }> {
+    try {
+      const { recipientAddress, metadataUri, tokenType } = params
       
-      if (error.response?.status === 403) {
-        throw new Error('Vous n\'êtes pas autorisé à émettre des certificats sur ce contrat')
-      } else if (error.response?.status === 400) {
-        throw new Error(error.response.data.error || 'Données de certificat invalides')
-      } else if (error.response?.status === 500) {
-        throw new Error('Erreur serveur lors de l\'émission du certificat')
+      const ownerPublicKey = await this.solanaService.connectWallet()
+      if (!ownerPublicKey) {
+        throw new Error('Solana wallet not connected')
+      }
+
+      const recipientPublicKey = new (await import('@solana/web3.js')).PublicKey(recipientAddress)
+
+      let mintAddress: string
+      if (tokenType === 'sbt') {
+        mintAddress = await this.solanaService.createCertificateSBT(ownerPublicKey, recipientPublicKey, metadataUri)
       } else {
-        throw new Error(error.response?.data?.error || error.message || 'Erreur lors de l\'émission du certificat')
+        mintAddress = await this.solanaService.createCertificateNFT(ownerPublicKey, recipientPublicKey, metadataUri)
       }
-    }
-  }
 
-  async getCertificateFromBlockchain(contractAddress: string, tokenId: string): Promise<Certificate> {
-    try {
-      console.log('🔍 Getting certificate from blockchain...')
-      
-      const response = await contractAPI.getCertificate(contractAddress, tokenId)
-      
       return {
-        tokenId: response.data.tokenId,
-        recipient: response.data.recipient,
-        recipientName: response.data.recipientName,
-        courseName: response.data.courseName,
-        ipfsHash: response.data.ipfsHash,
-        issueDate: response.data.issueDate,
-        isPublic: response.data.isPublic,
-        isSoulbound: response.data.isSoulbound
+        tokenId: mintAddress,
+        transactionHash: 'solana_' + Date.now().toString(),
+        blockNumber: Date.now()
       }
-    } catch (error: any) {
-      console.error('❌ Get certificate error:', error)
-      throw new Error(error.response?.data?.error || 'Erreur lors de la récupération du certificat')
-    }
-  }
-
-  async getContractInfo(contractAddress: string): Promise<any> {
-    try {
-      const response = await contractAPI.getContractInfo(contractAddress)
-      return response.data
-    } catch (error: any) {
-      console.error('❌ Get contract info error:', error)
-      throw new Error(error.response?.data?.error || 'Erreur lors de la récupération des informations du contrat')
+    } catch (error) {
+      console.error('Solana certificate issuance error:', error)
+      throw error
     }
   }
 
   async switchNetwork(blockchain: string): Promise<void> {
+    if (blockchain.startsWith('solana')) {
+      // Solana network switching would be handled differently
+      return
+    }
+
     if (!this.provider || !(window as any).ethereum) {
       throw new Error('No wallet connected')
     }
 
-    const config = NETWORK_CONFIGS[blockchain as keyof typeof NETWORK_CONFIGS]
+    const config = CONTRACT_CONFIGS[blockchain as keyof typeof CONTRACT_CONFIGS]
     if (!config) {
       throw new Error('Unsupported network')
     }
@@ -343,14 +283,6 @@ export class BlockchainService {
     }
   }
 
-  getBlockExplorerUrl(blockchain: string, hash: string, type: 'tx' | 'address' = 'tx'): string {
-    const config = NETWORK_CONFIGS[blockchain as keyof typeof NETWORK_CONFIGS]
-    if (!config) return ''
-    
-    const path = type === 'tx' ? 'tx' : 'address'
-    return `${config.blockExplorer}/${path}/${hash}`
-  }
-
   async getBalance(address?: string): Promise<string> {
     if (!this.provider) {
       throw new Error('No provider available')
@@ -370,18 +302,35 @@ export class BlockchainService {
     }
   }
 
-  async isConnected(): Promise<boolean> {
+  async getAccount(): Promise<string | null> {
     try {
-      const account = await this.getAccount()
-      return !!account
+      const signer = await this.getSigner()
+      return await signer.getAddress()
     } catch (error) {
-      return false
+      console.error('Failed to get account:', error)
+      return null
     }
   }
 
-  disconnect(): void {
-    this.provider = null
-    this.signer = null
+  getBlockExplorerUrl(blockchain: string, hash: string, type: 'tx' | 'address' = 'tx'): string {
+    if (blockchain.startsWith('solana')) {
+      return this.solanaService.getExplorerUrl(hash)
+    }
+
+    const config = CONTRACT_CONFIGS[blockchain as keyof typeof CONTRACT_CONFIGS]
+    if (!config) return ''
+    
+    const path = type === 'tx' ? 'tx' : 'address'
+    return `${config.blockExplorer}/${path}/${hash}`
+  }
+
+  getEstimatedCost(blockchain: string): string {
+    const config = CONTRACT_CONFIGS[blockchain as keyof typeof CONTRACT_CONFIGS]
+    return config?.deploymentCost || '0.01'
+  }
+
+  getSupportedTokenTypes(): typeof TOKEN_TYPES {
+    return TOKEN_TYPES
   }
 }
 

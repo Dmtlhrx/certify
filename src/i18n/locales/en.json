@@ -5,13 +5,16 @@
     "verify": "Verify",
     "gallery": "Gallery",
     "connect": "Connect Wallet",
-    "disconnect": "Disconnect"
+    "disconnect": "Disconnect",
+    "settings": "Settings",
+    "create": "Create Certificate",
+    "editor": "Template Editor"
   },
   "landing": {
     "hero": {
       "title": "Create & Issue Web3 Certificates",
       "subtitle": "No-code platform for blockchain-verified certifications",
-      "description": "Empower your organization with decentralized certificates. Create, customize, and issue NFT/SBT certificates on Ethereum, BNB Chain, or Solana without writing code.",
+      "description": "Empower your organization with decentralized certificates. Create, customize, and issue NFT/SBT certificates on multiple blockchains without writing code.",
       "getStarted": "Get Started",
       "learnMore": "Learn More"
     },
@@ -31,12 +34,13 @@
       },
       "multiChain": {
         "title": "Multi-Chain Support",
-        "description": "Deploy on Ethereum, BNB Chain, or Solana"
+        "description": "Deploy on Ethereum, BSC, Polygon, or Solana"
       }
     }
   },
   "dashboard": {
     "title": "Dashboard",
+    "welcome": "Welcome back",
     "stats": {
       "totalCertificates": "Total Certificates",
       "activeCertificates": "Active Certificates",
@@ -47,7 +51,210 @@
     "quickActions": "Quick Actions",
     "createCertificate": "Create Certificate",
     "editTemplate": "Edit Template",
-    "viewAnalytics": "View Analytics"
+    "viewAnalytics": "View Analytics",
+    "setupRequired": "Setup Required",
+    "setupDescription": "Configure your organization and deploy your smart contract to start issuing certificates.",
+    "configureNow": "Configure Now"
+  },
+  "tokenTypes": {
+    "nft": {
+      "title": "NFT Certificate",
+      "subtitle": "Transferable & Tradeable",
+      "description": "Standard NFT that can be transferred, traded, and sold on marketplaces.",
+      "features": {
+        "transferable": "Transferable between wallets",
+        "tradeable": "Can be traded on marketplaces",
+        "sellable": "Can be sold for value",
+        "collectible": "Collectible asset"
+      },
+      "useCases": {
+        "achievements": "Gaming achievements",
+        "collectibles": "Digital collectibles",
+        "tradeable": "Tradeable credentials"
+      }
+    },
+    "sbt": {
+      "title": "SBT Certificate",
+      "subtitle": "Soulbound & Permanent",
+      "description": "Non-transferable token permanently bound to the recipient's wallet.",
+      "features": {
+        "transferable": "Cannot be transferred",
+        "tradeable": "Cannot be traded",
+        "permanent": "Permanently bound to wallet",
+        "identity": "Represents identity/credentials"
+      },
+      "useCases": {
+        "credentials": "Educational credentials",
+        "identity": "Identity verification",
+        "reputation": "Reputation systems"
+      }
+    },
+    "modal": {
+      "title": "Choose Token Type",
+      "subtitle": "Select the type of certificate token you want to create",
+      "features": "Features",
+      "useCases": "Use Cases",
+      "info": {
+        "title": "Need Help Choosing?",
+        "description": "NFTs are great for tradeable assets, while SBTs are perfect for credentials and identity verification that should remain with the original recipient."
+      }
+    }
+  },
+  "blockchains": {
+    "sepolia": {
+      "description": "Ethereum testnet with full compatibility"
+    },
+    "bscTestnet": {
+      "description": "Fast and low-cost Binance Smart Chain testnet"
+    },
+    "polygonMumbai": {
+      "description": "Scalable Polygon testnet with low fees"
+    },
+    "solanaDevnet": {
+      "description": "Ultra-fast Solana development network"
+    },
+    "features": {
+      "secure": "Secure",
+      "established": "Established",
+      "fast": "Fast",
+      "cheap": "Low Cost",
+      "scalable": "Scalable",
+      "eco": "Eco-friendly",
+      "ultrafast": "Ultra Fast",
+      "lowcost": "Very Low Cost"
+    },
+    "testnet": "Testnet"
+  },
+  "deployment": {
+    "title": "Deploy Smart Contract",
+    "subtitle": "Deploy your certificate contract on the blockchain",
+    "selectBlockchain": "Select Blockchain",
+    "blockchainDescription": "Choose the blockchain network for your certificate contract",
+    "cost": "Deploy Cost",
+    "speed": "Block Time",
+    "contractInfo": "Contract Information",
+    "contractName": "Contract Name",
+    "contractSymbol": "Contract Symbol",
+    "tokenType": "Token Type",
+    "estimatedCost": "Estimated Cost",
+    "deployContract": "Deploy Contract",
+    "deploying": "Deploying...",
+    "deploymentSuccess": "Contract deployed successfully!",
+    "deploymentError": "Deployment failed",
+    "testnetWarning": {
+      "title": "Testnet Networks",
+      "description": "These are test networks for development. Tokens have no real value and are used for testing purposes only."
+    },
+    "steps": {
+      "configure": "Configure",
+      "deploy": "Deploy",
+      "verify": "Verify",
+      "complete": "Complete"
+    },
+    "status": {
+      "preparing": "Preparing deployment...",
+      "switching": "Switching network...",
+      "deploying": "Deploying contract...",
+      "confirming": "Confirming transaction...",
+      "success": "Deployment successful!"
+    }
+  },
+  "certificates": {
+    "create": "Create Certificate",
+    "issue": "Issue Certificate",
+    "recipient": "Recipient",
+    "course": "Course/Training",
+    "description": "Description",
+    "issueDate": "Issue Date",
+    "recipientAddress": "Recipient Wallet Address",
+    "recipientName": "Recipient Name",
+    "courseName": "Course Name",
+    "makePublic": "Make this certificate publicly visible",
+    "soulbound": "Soulbound (non-transferable)",
+    "preview": "Preview",
+    "mint": "Create Certificate",
+    "minting": "Creating...",
+    "success": "Certificate created successfully!",
+    "downloadPdf": "Download PDF",
+    "viewOnBlockchain": "View on Blockchain",
+    "createAnother": "Create Another Certificate"
+  },
+  "settings": {
+    "title": "Organization Settings",
+    "subtitle": "Configure your organization profile and blockchain settings",
+    "profile": "Organization Profile",
+    "blockchain": "Blockchain",
+    "companyName": "Organization Name",
+    "description": "Description",
+    "website": "Website",
+    "email": "Contact Email",
+    "industry": "Industry",
+    "country": "Country",
+    "logo": "Logo",
+    "uploadLogo": "Upload Logo",
+    "save": "Save",
+    "smartContract": "Smart Contract",
+    "contractStatus": "Your dedicated certificate contract",
+    "deployed": "Deployed",
+    "notDeployed": "Not Deployed",
+    "contractAddress": "Contract Address",
+    "deployContract": "Deploy Contract",
+    "availableNetworks": "Available Blockchain Networks"
+  },
+  "verification": {
+    "title": "Verify Certificate",
+    "subtitle": "Enter a certificate ID or wallet address to verify authenticity",
+    "searchPlaceholder": "Enter certificate ID or wallet address",
+    "verify": "Verify Certificate",
+    "verifying": "Verifying...",
+    "verified": "Certificate Verified",
+    "notFound": "Certificate Not Found",
+    "authentic": "This certificate is authentic and verified on the blockchain",
+    "invalid": "No certificate found with the provided identifier",
+    "certificateDetails": "Certificate Details",
+    "issuedBy": "Issued by",
+    "issuedTo": "Issued to",
+    "issueDate": "Issue Date",
+    "certificateId": "Certificate ID",
+    "blockNumber": "Block Number",
+    "transactionHash": "Transaction Hash",
+    "ipfsHash": "IPFS Hash",
+    "downloadPdf": "Download PDF",
+    "viewOnBlockchain": "View on Blockchain",
+    "viewOnIpfs": "View on IPFS",
+    "shareQr": "Share Certificate"
+  },
+  "gallery": {
+    "title": "Public Certificate Gallery",
+    "subtitle": "Explore verified certificates from organizations worldwide",
+    "search": "Search certificates...",
+    "filter": "Filter",
+    "allCategories": "All Categories",
+    "showing": "Showing",
+    "of": "of",
+    "certificates": "certificates",
+    "noResults": "No certificates found",
+    "tryAdjusting": "Try adjusting your search criteria or browse all categories",
+    "clearFilters": "Clear Filters",
+    "verified": "Verified"
+  },
+  "wallet": {
+    "connect": "Connect Wallet",
+    "connecting": "Connecting...",
+    "connected": "Connected",
+    "disconnect": "Disconnect",
+    "switchNetwork": "Switch Network",
+    "wrongNetwork": "Wrong Network",
+    "installMetaMask": "Install MetaMask",
+    "walletRequired": "Wallet Required",
+    "walletDescription": "To use CertifyWeb3, you need to install MetaMask or another compatible Web3 wallet.",
+    "whyWallet": "Why do I need a wallet?",
+    "walletExplanation": "Wallets allow you to sign and verify your certificates on the blockchain securely.",
+    "noWalletDetected": "No wallet detected",
+    "installWallet": "Install a wallet to get started",
+    "connectingTo": "Connecting to",
+    "connectionFailed": "Connection failed",
+    "tryAgain": "Try again"
   },
   "common": {
     "loading": "Loading...",
@@ -63,6 +270,28 @@
     "error": "Error",
     "success": "Success",
     "warning": "Warning",
-    "info": "Info"
+    "info": "Info",
+    "continue": "Continue",
+    "back": "Back",
+    "next": "Next",
+    "finish": "Finish",
+    "close": "Close",
+    "confirm": "Confirm",
+    "yes": "Yes",
+    "no": "No",
+    "optional": "Optional",
+    "required": "Required"
+  },
+  "errors": {
+    "walletNotConnected": "Please connect your wallet",
+    "networkNotSupported": "Network not supported",
+    "insufficientFunds": "Insufficient funds for deployment",
+    "transactionFailed": "Transaction failed",
+    "contractNotFound": "Contract not found",
+    "invalidAddress": "Invalid wallet address",
+    "deploymentFailed": "Contract deployment failed",
+    "mintingFailed": "Certificate minting failed",
+    "serverError": "Server error occurred",
+    "networkError": "Network error - please check your connection"
   }
 }

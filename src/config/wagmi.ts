@@ -63,7 +63,7 @@ connectors.push(new CoinbaseWalletConnector({
   },
 }))
 
-// Only add WalletConnect if we have a valid project ID
+// Add WalletConnect if we have a valid project ID
 if (hasValidWalletConnectId) {
   try {
     const { connectors: rainbowConnectors } = getDefaultWallets({
@@ -79,6 +79,12 @@ if (hasValidWalletConnectId) {
       options: {
         projectId: walletConnectProjectId,
         showQrModal: true,
+        metadata: {
+          name: 'CertifyWeb3',
+          description: 'Blockchain Certificate Platform',
+          url: 'https://certifyweb3.com',
+          icons: ['https://certifyweb3.com/logo.png']
+        }
       },
     }))
   } catch (error) {
